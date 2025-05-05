@@ -21,6 +21,7 @@
     "dialogflow": "^0.8.2",
     "dialogflow-fulfillment": "^0.6.1",
     "express": "^4.16.4",
+    "fastest-levenshtein": "^1.0.16",
     "mongoose": "^5.4.20",
     "openai": "^4.90.0",
     "sqlite3": "^5.1.7"

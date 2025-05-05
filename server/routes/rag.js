@@ -46,30 +46,38 @@ router.post('/exhibition', async (req, res) => {
     // creating the SQL query based on the extracted filters
     let conditions = [];
     let params = [];
+    let conditioned = false;
 
     if (filters.title) {
       conditions.push("title LIKE ?");
       params.push(`%${filters.title}%`);
+      conditioned = true;
     }
     if (filters.location) {
       conditions.push("location LIKE ?");
       params.push(`%${filters.location}%`);
+      conditioned = true;
     }
     if (filters.price === "무료") {
       conditions.push("price = 0");
+      conditioned = true;
     } else if (filters.price === "유료") {
       conditions.push("price > 0");
+      conditioned = true;
     }
     if (filters.category) {
       conditions.push("category LIKE ?");
       params.push(`%${filters.category}%`);
+      conditioned = true;
     }
     if (filters.date_range) {
       conditions.push("start_date <= ? AND end_date >= ?");
       params.push(filters.date_range[1]);
       params.push(filters.date_range[0]);
+      conditioned = true;
     }
 
+    
     const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
     const query = `SELECT title, start_date, end_date, location FROM exhibition ${whereClause}`;
     console.log(`query : \n${query}`);
@@ -100,8 +108,9 @@ router.post('/exhibition', async (req, res) => {
           fulfillmentText: reply,
         });
       }
+      // only the first 3 exhibitions are sent
       else {
-        const exhibitionList = rows.map((row, idx) =>
+        const exhibitionList = rows.slice(0,3).map((row, idx) =>
           `${idx + 1}. "${row.title}", ${row.start_date} ~ ${row.end_date}, ${row.location}`
         ).join('\n');
 
@@ -113,7 +122,8 @@ router.post('/exhibition', async (req, res) => {
   검색된 전시회 목록:
   ${exhibitionList}
   
-  위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.
+  위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오. 이모지를 사용하지 마십시오.
+  사용자가 전시회 정보를 요구하는 것이 아닐 경우, 전시회에 관련한 내용 없이 자연스럽게 답변하십시오.
         `;
   
         const finalRes = await openai.chat.completions.create({

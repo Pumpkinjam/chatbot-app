@@ -2,7 +2,7 @@ const fs = require("fs");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 
-const dbPath = path.join(__dirname, "../db/exhibitions.db");
+const dbPath = path.join(__dirname, "../db/sample.db");
 const initSql = fs.readFileSync(path.join(__dirname, "../db/init_db.sql"), "utf8");
 
 const db = new sqlite3.Database(dbPath);

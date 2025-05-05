@@ -12,10 +12,7 @@ const config = require("./server/config/keys");
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-
-app.use('/api/dialogflow', require('./server/routes/dialogflow'));  // using gpt, currently not in use
 app.use('/api/gpt', require('./server/routes/gpt'));
-app.use('/api/rag', require('./server/routes/rag'));
 
 // Serve static assets if in production
 if (process.env.NODE_ENV === "production") {

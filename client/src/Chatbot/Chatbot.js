@@ -28,7 +28,7 @@ function Chatbot() {
         const textQueryVariables = { text };
 
         try {
-            const gptResponse = await Axios.post('/api/rag/exhibition', textQueryVariables);
+            const gptResponse = await Axios.post('/api/gpt/chat', textQueryVariables);
 
             const gptReply = {
                 who: 'bot',
@@ -52,11 +52,11 @@ function Chatbot() {
         }
     };
 
-    const eventQuery = async (event) => {
+    const eventQuery = async (event) => {    
         const eventQueryVariables = { event };
 
         try {
-            const response = await Axios.post('/api/gpt/eventQuery', eventQueryVariables);
+            const response = await Axios.post('/api/gpt/event', eventQueryVariables);
 
             const reply = {
                 who: 'bot',
