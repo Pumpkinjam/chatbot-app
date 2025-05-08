@@ -2,15 +2,15 @@ import React, { useEffect } from 'react';
 import Axios from 'axios';
 import { useDispatch, useSelector } from 'react-redux';
 import { saveMessage } from '../_actions/message_actions';
-import Message from './Sections/Message';
-import { List, Icon, Avatar } from 'antd';
+import MsgComponent from './Sections/MsgComponent';
+//import { List, Icon, Avatar } from 'antd';
 
 function Chatbot() {
     const dispatch = useDispatch();
     const messagesFromRedux = useSelector(state => state.message.messages);
 
     useEffect(() => {
-        eventQuery('사용자에게 인사하기');
+        eventQuery('사용자에게 인사하세요');
     }, []);
 
     const textQuery = async (text) => {
@@ -95,7 +95,7 @@ function Chatbot() {
 
     const renderOneMessage = (message, i) => {
         if (message.content && message.content.text && message.content.text.text) {
-            return <Message key={i} who={message.who} text={message.content.text.text} />;
+            return <MsgComponent key={i} who={message.who} text={message.content.text.text} />;
         }
     };
 
