@@ -9,12 +9,34 @@ const db = new sqlite3.Database(dbPath);
 const openai = new OpenAI({
   apiKey: config.openaiApiKey,
 });
+const gpt_model = 'gpt-4.1-mini';
 
-const system_prompt = "당신은 사용자의 질문에 답을 하기 위한 안내 챗봇 Artlas입니다.";
+const systemPrompt = "당신은 사용자의 질문에 답을 하기 위한 안내 챗봇 Artlas입니다.";
+
+// user conversation history for context
+const conversationHistory = {};
+const MAX_HISTORY = 20;
 
 // TODO
-// 1. remembering context 
-// 2. add more filters (exhibition: artist, gallery, news, etc.)
+// 1. json key categorizing enhancement -- fine-tuning for json build??
+
+// conversation history management
+function addToConversationHistory(userId, role, content) {
+  if (!conversationHistory[userId]) {
+      conversationHistory[userId] = [];
+  }
+
+  conversationHistory[userId].push({ role, content });
+
+  // remove oldest message if history exceeds max length
+  if (conversationHistory[userId].length > MAX_HISTORY) {
+      conversationHistory[userId].shift();
+  }
+}
+
+function getConversationHistory(userId) {
+  return conversationHistory[userId] || [];
+}
 
 function dbQuery(sql, params) {
   return new Promise((resolve, reject) => {
@@ -25,10 +47,12 @@ function dbQuery(sql, params) {
   });
 }
 
-async function exhibitionRoutine(filters, userText) {
-  // SQL 쿼리 생성
+async function exhibitionRoutine(userId, filters, userText) {
+  // generate SQL query
   let conditions = [];
   let params = [];
+
+  filters = filters || {};  // preventing error if filters is null
 
   if (filters.title) {
     const keywords = filters.title.trim().split(/\s+/);
@@ -48,10 +72,9 @@ async function exhibitionRoutine(filters, userText) {
     conditions.push("location LIKE ?");
     params.push(`%${filters.location}%`);
   }
-  if (filters.price === "무료") {
-    conditions.push("price = 0");
-  } else if (filters.price === "유료") {
-    conditions.push("price > 0");
+  if (filters.price) {
+    conditions.push("price <= ?");
+    params.push(`${filters.price}`);
   }
   if (filters.category) {
     conditions.push("category LIKE ?");
@@ -59,8 +82,27 @@ async function exhibitionRoutine(filters, userText) {
   }
   if (filters.date_range) {
     conditions.push("start_date <= ? AND end_date >= ?");
-    params.push(filters.date_range[1]); // 종료 날짜
-    params.push(filters.date_range[0]); // 시작 날짜
+    params.push(filters.date_range[1]); 
+    params.push(filters.date_range[0]); 
+  }
+  if (filters.time_range) {
+    conditions.push("start_time <= ? AND end_time >= ?");
+    params.push(filters.time_range[1]); 
+    params.push(filters.time_range[0]);
+  }
+  if (filters.tag) {
+    const keywords = filters.tag.trim().split(/\s+/);
+    if (keywords.length > 0) {
+      const tagConditions = keywords.map(() => `tag LIKE ?`).join(' OR ');
+      const wrappedTagCondition = `(${tagConditions})`;
+
+      // add to conditions
+      conditions.push(wrappedTagCondition);
+      // add to params
+      keywords.forEach(word => {
+        params.push(`%${word}%`);
+      });
+    }
   }
 
   const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
@@ -77,9 +119,10 @@ async function exhibitionRoutine(filters, userText) {
     검색된 전시회가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: noResultPrompt },
       ],
     });
@@ -88,8 +131,8 @@ async function exhibitionRoutine(filters, userText) {
   } 
   // if ther's some result, take the first 3 results
   else {
-    const exhibitionList = rows.slice(0, 3).map((row, idx) =>
-      `${idx + 1}. "${row.title}", ${row.start_date} ~ ${row.end_date}, ${row.location}`
+    const exhibitionList = rows.slice(0, 10).map((row, idx) =>
+      `${idx + 1}. "${row.title}", ${row.category}, ${row.start_date} ~ ${row.end_date}, ${row.start_time} ~ ${row.end_time}, ${row.location}, ${row.price}, ${row.tag}, ${row.status}`
     ).join('\n');
 
     const finalPrompt = `
@@ -100,35 +143,31 @@ async function exhibitionRoutine(filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: finalPrompt },
       ],
     });
 
-    return finalRes.choices[0].message.content;
+    const GPTResponse = finalRes.choices[0].message.content;
+    console.log(`GPTResponse: \n${GPTResponse.toString()}`);
+    
+    return GPTResponse;
   }
 }
 
-async function artistRoutine(filters, userText) {
-  // SQL 쿼리 생성
+async function artistRoutine(userId, filters, userText) {
+  // generate SQL query
   let conditions = [];
   let params = [];
 
-  if (filters.title) {
-    const keywords = filters.title.trim().split(/\s+/);
-    if (keywords.length > 0) {
-      const nameConditions = keywords.map(() => `name LIKE ?`).join(' OR ');
-      const wrappedNameCondition = `(${nameConditions})`;
+  filters = filters || {};  // preventing error if filters is null
 
-      // add to conditions
-      conditions.push(wrappedNameCondition);
-      // add to params
-      keywords.forEach(word => {
-        params.push(`%${word}%`);
-      });
-    }
+  if (filters.name) {
+    conditions.push("name LIKE ?");
+    params.push(`%${filters.name}%`);
   }
   if (filters.category) {
     conditions.push("category LIKE ?");
@@ -138,13 +177,27 @@ async function artistRoutine(filters, userText) {
     conditions.push("nation LIKE ?");
     params.push(`%${filters.nation}%`);
   }
+  if (filters.description) {
+    const keywords = filters.description.trim().split(/\s+/);
+    if (keywords.length > 0) {
+      const descriptionConditions = keywords.map(() => `description LIKE ?`).join(' OR ');
+      const wrappedDescriptionCondition = `(${descriptionConditions})`;
+
+      // add to conditions
+      conditions.push(wrappedDescriptionCondition);
+      // add to params
+      keywords.forEach(word => {
+        params.push(`%${word}%`);
+      });
+    }
+  }
 
   const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
   const query = `SELECT * FROM artist ${whereClause}`;
   console.log(`query : \n${query}`);
   console.log(`params : \n${params}`);
 
-  // DB 쿼리 실행
+  // db query
   const rows = await dbQuery(query, params);
 
   if (!rows.length) {
@@ -152,19 +205,21 @@ async function artistRoutine(filters, userText) {
     검색된 작가가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: noResultPrompt },
       ],
     });
 
     return noResultRes.choices[0].message.content;
   } else {
-    const artistList = rows.slice(0, 3).map((row, idx) =>
-      `${idx + 1}. "${row.name}", ${row.category}, ${row.nation}`
+    const artistList = rows.slice(0, 10).map((row, idx) =>
+      `${idx + 1}. "${row.name}", ${row.category}, ${row.nation}, ${row.description}`
     ).join('\n');
 
+    //console.log(`artistList: \n${artistList}`);
     const finalPrompt = `
     사용자 질문: "${userText}"
     검색된 아티스트 목록:
@@ -173,9 +228,10 @@ async function artistRoutine(filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: finalPrompt },
       ],
     });
@@ -184,13 +240,15 @@ async function artistRoutine(filters, userText) {
   }
 }
 
-async function galleryRoutine(filters, userText) {
+async function galleryRoutine(userId, filters, userText) {
   // SQL 쿼리 생성
   let conditions = [];
   let params = [];
 
-  if (filters.title) {
-    const keywords = filters.title.trim().split(/\s+/);
+  filters = filters || {};  // preventing error if filters is null
+
+  if (filters.name) {
+    const keywords = filters.name.trim().split(/\s+/);
     if (keywords.length > 0) {
       const nameConditions = keywords.map(() => `name LIKE ?`).join(' OR ');
       const wrappedNameCondition = `(${nameConditions})`;
@@ -203,13 +261,33 @@ async function galleryRoutine(filters, userText) {
       });
     }
   }
+  // location -> address
   if (filters.location) {
     conditions.push("address LIKE ?");
     params.push(`%${filters.location}%`);
   }
+  if (filters.time_range) {
+    conditions.push("start_time <= ? AND end_time >= ?");
+    params.push(filters.time_range[1]);
+    params.push(filters.time_range[0]);
+  }
   if (filters.category) {
     conditions.push("category LIKE ?");
     params.push(`%${filters.category}%`);
+  }
+  if (filters.description) {
+    const keywords = filters.description.trim().split(/\s+/);
+    if (keywords.length > 0) {
+      const descriptionConditions = keywords.map(() => `description LIKE ?`).join(' OR ');
+      const wrappedDescriptionCondition = `(${descriptionConditions})`;
+
+      // add to conditions
+      conditions.push(wrappedDescriptionCondition);
+      // add to params
+      keywords.forEach(word => {
+        params.push(`%${word}%`);
+      });
+    }
   }
 
   const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
@@ -225,17 +303,18 @@ async function galleryRoutine(filters, userText) {
     검색된 갤러리가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: noResultPrompt },
       ],
     });
 
     return noResultRes.choices[0].message.content;
   } else {
-    const galleryList = rows.slice(0, 3).map((row, idx) =>
-      `${idx + 1}. "${row.name}", ${row.address}, ${row.category}`
+    const galleryList = rows.slice(0, 10).map((row, idx) =>
+      `${idx + 1}. "${row.name}", ${row.address}, ${row.start_time} ~ ${row.end_time}, 휴무일: ${row.closed_day}, ${row.category}, ${row.description}`
     ).join('\n');
 
     const finalPrompt = `
@@ -246,9 +325,10 @@ async function galleryRoutine(filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: finalPrompt },
       ],
     });
@@ -257,10 +337,12 @@ async function galleryRoutine(filters, userText) {
   }
 }
 
-async function newsRoutine(filters, userText) {
+async function newsRoutine(userId, filters, userText) {
   // SQL 쿼리 생성
   let conditions = [];
   let params = [];
+
+  filters = filters || {};  // preventing error if filters is null
 
   if (filters.title) {
     const keywords = filters.title.trim().split(/\s+/);
@@ -299,17 +381,18 @@ async function newsRoutine(filters, userText) {
     검색된 뉴스가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: noResultPrompt },
       ],
     });
 
     return noResultRes.choices[0].message.content;
   } else {
-    const newsList = rows.slice(0, 3).map((row, idx) =>
-      `${idx + 1}. "${row.title}", ${row.category}, ${row.start_date} ~ ${row.end_date}`
+    const newsList = rows.slice(0, 10).map((row, idx) =>
+      `${idx + 1}. "${row.title}", ${row.category}, ${row.status}, ${row.start_date} ~ ${row.end_date}`
     ).join('\n');
 
     const finalPrompt = `
@@ -320,9 +403,10 @@ async function newsRoutine(filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
+        ...getConversationHistory(userId),
         { role: 'user', content: finalPrompt },
       ],
     });
@@ -331,18 +415,20 @@ async function newsRoutine(filters, userText) {
   }
 }
 
-async function defaultRoutine(userText) {
+async function defaultRoutine(userId, userText) {
   const defaultPrompt = `
   사용자 질문: "${userText}"
-  사용자에게 친절하고 자연스러운 답변을 제공하십시오. 기준이 되는 오늘 날짜는 ${new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '')}입니다.
+  사용자에게 친절하고 자연스러운 답변을 제공하십시오.
+  날짜에 대한 정보가 필요할 경우, 기준이 되는 오늘 날짜는 ${new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '')}입니다.
   `;
 
   try {
       const defaultRes = await openai.chat.completions.create({
-          model: 'gpt-4.1-nano',
+          model: gpt_model,
           messages: [
-              { role: 'system', content: "당신은 사용자와 대화를 하기 위해 만들어진 챗봇 Artlas입니다." },
-              { role: 'user', content: defaultPrompt },
+              { role: 'system', content: "당신은 예술 플랫폼 Artly에서 사용자와 대화를 하기 위해 만들어진 챗봇 Artlas입니다." },
+              ...getConversationHistory(userId),
+              { role: 'user', content: defaultPrompt }
           ],
       });
 
@@ -355,23 +441,36 @@ async function defaultRoutine(userText) {
 
 // /chat POST API
 router.post('/chat', async (req, res) => {
+  //console.log(`Conversation History: ${JSON.stringify(conversationHistory, null, 2)}`);
+  const userId = req.userId || 'default';
   const userText = req.body.text;
 
   let todayDate = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''); // YYYY-MM-DD HH:mm:ss
 
   try {
+    addToConversationHistory(userId, 'user', userText);
+
+    // NLU - extract intent and entity from user text
     const extractPrompt = `
-사용자 질문에서 의도를 파악하여 주어진 JSON 형식으로 작성하십시오.
-사용자가 요구하지 않은 내용에 대한 key-value는 json에 포함하지 마십시오.
+사용자 질문에서 의도를 파악하여 주어진 JSON 형식으로 작성하십시오. 필요하다면 대화 내역 context를 참고하십시오.
+사용자가 요구한 내용에 대한 key-value만 작성하십시오. 내용이 없는 key는 생략하십시오.
 날짜에 대한 정보가 필요할 경우, 기준이 되는 날짜는 ${todayDate}입니다.
 형식: 
 {
-  "object": "exhibition" | "artist" | "gallery" | "news" | "other" ,
-  "title": "전시회 제목" (없을 시 생략),
-  "date_range": ["YYYY-MM-DD", "YYYY-MM-DD"] (없을 시 생략),
-  "location": "지역명" (없을 시 생략),
-  "category": "카테고리" (없을 시 생략),
-  "price": "무료" | "유료" (없을 시 생략)
+  "intent": {
+    "object": "exhibition" | "artist" | "gallery" | "news" | "other" ,
+  },
+  "entity": {
+    "title": "제목",
+    "category": "카테고리",
+    "date_range": ["YYYY-MM-DD", "YYYY-MM-DD"],
+    "time_range": ["HH:mm", "HH:mm"],
+    "location": "지역명 또는 장소명",
+    "price": 가격 (exhibition일 때만, 정수로 작성) (단순히 "유료"일 경우, 999999로 작성),
+    "tag": "태그" (주제를 단어로 작성) (object가 exhibition이 아니면 생략),
+    "name": "이름",
+    "nation": "국적" (artist일 때만 작성) 
+  }
 }
 
 질문: "${userText}"
@@ -379,42 +478,50 @@ router.post('/chat', async (req, res) => {
 
     // call OpenAI API
     const extraction = await openai.chat.completions.create({
-      model: 'gpt-4.1-nano',
+      model: gpt_model,
       messages: [
         { role: 'system', content: "당신은 사용자의 질문에서 의도를 파악하여 정해진 json 형식으로 반환하는 봇입니다." },
+        ...getConversationHistory(userId),
         { role: 'user', content: extractPrompt }],
     });
 
-    console.log(`extraction: \n${extraction.choices[0].message.content.trim()}`);
+    // debugging log
+    // console.log(`extraction: \n${extraction.choices[0].message.content.trim()}`);
 
     // parse JSON from response
     const jsonString = extraction.choices[0].message.content.trim();
-    const filters = JSON.parse(jsonString);
-
-    // debugging log
-    console.log(`json received: \n${jsonString}`);
+    const jsonObject = JSON.parse(jsonString);
+    const intent = jsonObject.intent.object;
+    const filters = jsonObject.entity;
 
     // call function for...
     let gptResponse;
-    switch (filters.object) {
+    switch (intent) {
       case 'exhibition':
-        gptResponse = await exhibitionRoutine(filters, userText);
+        gptResponse = await exhibitionRoutine(userId, filters, userText);
         break;
       case 'artist':
-        gptResponse = await artistRoutine(filters, userText);
+        gptResponse = await artistRoutine(userId, filters, userText);
         break;
       case 'gallery':
-        gptResponse = await galleryRoutine(filters, userText);
+        gptResponse = await galleryRoutine(userId, filters, userText);
         break;
       case 'news':
-        gptResponse = await newsRoutine(filters, userText);
+        gptResponse = await newsRoutine(userId, filters, userText);
         break;
       default:
-        gptResponse = await defaultRoutine(userText);
+        gptResponse = await defaultRoutine(userId, userText);
         console.log(`default routine activated`);
     }
 
-    // 응답 반환
+    // add to conversation history
+    addToConversationHistory(userId, 'assistant', gptResponse);
+    console.log('====================');
+    console.log(`userId: ${userId}`);
+    console.log(`userText: ${userText}`);
+    console.log(`extraction: \n${extraction.choices[0].message.content.trim()}`);
+    console.log(`gptResponse: \n${gptResponse}`);
+    console.log('====================');
     res.send({
       queryText: userText,
       fulfillmentText: gptResponse,
@@ -439,10 +546,11 @@ router.post('/event', async (req, res) => {
     const eventRes = await openai.chat.completions.create({
       model: 'gpt-4.1-nano',
       messages: [
-        { role: 'system', content: system_prompt },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: eventPrompt },
       ],
     });
+
 
     res.send({
       queryText: userText,
