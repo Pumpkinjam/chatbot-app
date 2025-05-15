@@ -14,3 +14,4 @@ dev.js
 ./server/config/dev.js
 
 ngrok.exe
+fine_data.jsonl

@@ -9,16 +9,18 @@ const db = new sqlite3.Database(dbPath);
 const openai = new OpenAI({
   apiKey: config.openaiApiKey,
 });
-const gpt_model = 'gpt-4.1-mini';
+const gpt_model_extraction = 'gpt-4.1-mini';
+const gpt_model_response = 'ft:gpt-4.1-nano-2025-04-14:personal:chat-data-1:BX9eyK5W';
 
-const systemPrompt = "당신은 사용자의 질문에 답을 하기 위한 안내 챗봇 Artlas입니다.";
+const systemPrompt = "당신은 사용자의 질문에 답을 하기 위해 제작된, Artly 앱의 안내 챗봇 Artlas입니다.";
 
 // user conversation history for context
 const conversationHistory = {};
-const MAX_HISTORY = 20;
+const MAX_HISTORY = 50;
 
 // TODO
-// 1. json key categorizing enhancement -- fine-tuning for json build??
+// 0. needContextRoutine -- 대화 내역이 필요한 질문일 경우
+// 1. json key categorizing enhancement -- fine-tuning for json build
 
 // conversation history management
 function addToConversationHistory(userId, role, content) {
@@ -119,7 +121,7 @@ async function exhibitionRoutine(userId, filters, userText) {
     검색된 전시회가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -143,7 +145,7 @@ async function exhibitionRoutine(userId, filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: 'gpt-4.1-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -152,8 +154,8 @@ async function exhibitionRoutine(userId, filters, userText) {
     });
 
     const GPTResponse = finalRes.choices[0].message.content;
-    console.log(`GPTResponse: \n${GPTResponse.toString()}`);
-    
+    //console.log(`GPTResponse: \n${GPTResponse.toString()}`);
+    addToConversationHistory(userId, 'assistant', exhibitionList);
     return GPTResponse;
   }
 }
@@ -205,7 +207,7 @@ async function artistRoutine(userId, filters, userText) {
     검색된 작가가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -228,7 +230,7 @@ async function artistRoutine(userId, filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -236,6 +238,7 @@ async function artistRoutine(userId, filters, userText) {
       ],
     });
 
+    addToConversationHistory(userId, 'assistant', artistList);
     return finalRes.choices[0].message.content;
   }
 }
@@ -303,7 +306,7 @@ async function galleryRoutine(userId, filters, userText) {
     검색된 갤러리가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -325,7 +328,7 @@ async function galleryRoutine(userId, filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -333,6 +336,7 @@ async function galleryRoutine(userId, filters, userText) {
       ],
     });
 
+    addToConversationHistory(userId, 'assistant', galleryList);
     return finalRes.choices[0].message.content;
   }
 }
@@ -381,7 +385,7 @@ async function newsRoutine(userId, filters, userText) {
     검색된 뉴스가 없습니다. 사용자에게 친절하게 안내를 제공하십시오.`;
 
     const noResultRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -403,7 +407,7 @@ async function newsRoutine(userId, filters, userText) {
     위 정보를 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.`;
 
     const finalRes = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_response,
       messages: [
         { role: 'system', content: systemPrompt },
         ...getConversationHistory(userId),
@@ -411,9 +415,35 @@ async function newsRoutine(userId, filters, userText) {
       ],
     });
 
+    addToConversationHistory(userId, 'assistant', newsList);
     return finalRes.choices[0].message.content;
   }
 }
+
+/*
+async function needContextRoutine(userId, userText) {
+  const contextPrompt = `
+  사용자 질문: "${userText}"
+  대화 내역을 바탕으로 사용자에게 친절하고 자연스러운 답변을 제공하십시오.
+  날짜에 대한 정보가 필요할 경우, 기준이 되는 오늘 날짜는 ${new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '')}입니다.
+  `;
+
+  try {
+      const contextRes = await openai.chat.completions.create({
+          model: gpt_model_response,
+          messages: [
+              { role: 'system', content: "당신은 예술 플랫폼 Artly에서 사용자와 대화를 하기 위해 만들어진 챗봇 Artlas입니다." },
+              ...getConversationHistory(userId),
+              { role: 'user', content: contextPrompt }
+          ],
+      });
+
+      return contextRes.choices[0].message.content;
+  } catch (error) {
+      console.error("Error in needContextRoutine:", error);
+      return "죄송합니다. 요청을 처리하는 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  }
+}*/
 
 async function defaultRoutine(userId, userText) {
   const defaultPrompt = `
@@ -424,7 +454,7 @@ async function defaultRoutine(userId, userText) {
 
   try {
       const defaultRes = await openai.chat.completions.create({
-          model: gpt_model,
+          model: gpt_model_response,
           messages: [
               { role: 'system', content: "당신은 예술 플랫폼 Artly에서 사용자와 대화를 하기 위해 만들어진 챗봇 Artlas입니다." },
               ...getConversationHistory(userId),
@@ -441,7 +471,9 @@ async function defaultRoutine(userId, userText) {
 
 // /chat POST API
 router.post('/chat', async (req, res) => {
-  //console.log(`Conversation History: ${JSON.stringify(conversationHistory, null, 2)}`);
+
+  console.log(`Conversation History: ${JSON.stringify(conversationHistory, null, 2)}`);
+
   const userId = req.userId || 'default';
   const userText = req.body.text;
 
@@ -478,7 +510,7 @@ router.post('/chat', async (req, res) => {
 
     // call OpenAI API
     const extraction = await openai.chat.completions.create({
-      model: gpt_model,
+      model: gpt_model_extraction,
       messages: [
         { role: 'system', content: "당신은 사용자의 질문에서 의도를 파악하여 정해진 json 형식으로 반환하는 봇입니다." },
         ...getConversationHistory(userId),

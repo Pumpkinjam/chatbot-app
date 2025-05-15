@@ -23,7 +23,7 @@ function MsgComponent(props) {
                     padding: '10px',
                     margin: '0 5px',
                     borderRadius: '10px',
-                    backgroundColor: isBot ? '#f1f0f0' : '#0078ff',
+                    backgroundColor: isBot ? '#f1f0f0' : '#00a660',
                     color: isBot ? 'black' : 'white',
                     textAlign: isBot ? 'left' : 'right',
                 }}
