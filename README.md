@@ -1,22 +1,3 @@
-chatbot-app is being sponsored by the following tool <br />
-Please help to support us by taking a look and signing up to a free trial
-<a href="https://tracking.gitads.io/?repo=chatbot-app"><img src="https://images.gitads.io/chatbot-app" alt="GitAds"/></a> 
+## Chatbot App with RAG
 
-
-Hello, My Friends  
-
-Thanks for your interest in this repository ! 
-
-To use this application, 
-
-1. make dev.js file in config folder 
-2. put mongoDB info into dev.js file 
-3. Type  " npm install " inside the root directory  ( Download Server Dependencies ) 
-4. Type " npm install " inside the client directory ( Download Front-end Dependencies )
-
-If you have problem, feel free to ask me ^^ 
-
-You can view the tutorial through the link shown below.
-
-https://www.youtube.com/watch?v=h01cuxhteOA&t=4138s
-
+> Refered Jaewon Ahn's lecture... https://www.inflearn.com/course/%EB%94%B0%EB%9D%BC%ED%95%98%EB%A9%B0-%EB%B0%B0%EC%9A%B0%EB%8A%94-%EB%85%B8%EB%93%9C-%EB%A6%AC%EC%95%A1%ED%8A%B8-%EC%B1%97%EB%B4%87
